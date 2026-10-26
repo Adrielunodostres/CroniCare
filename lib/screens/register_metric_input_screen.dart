@@ -168,17 +168,28 @@ class _RegisterMetricInputScreenState extends State<RegisterMetricInputScreen> {
     setState(() => _isSaving = false);
 
     if (success) {
+      final isOnline = MetricasService().isOnline;
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+              Icon(
+                isOnline ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
               const SizedBox(width: 10),
-              Text('Medición de ${widget.categoria.label} guardada exitosamente'),
+              Expanded(
+                child: Text(
+                  isOnline
+                      ? 'Medición de ${widget.categoria.label} guardada en el servidor'
+                      : 'Medición de ${widget.categoria.label} guardada localmente',
+                ),
+              ),
             ],
           ),
-          backgroundColor: const Color(0xFF10B981),
+          backgroundColor: isOnline ? const Color(0xFF10B981) : const Color(0xFFD97706),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
@@ -186,8 +197,16 @@ class _RegisterMetricInputScreenState extends State<RegisterMetricInputScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Error al guardar la medición'),
-          backgroundColor: Colors.redAccent,
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Error al guardar la medición. Intenta de nuevo.'),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFFEF4444),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),

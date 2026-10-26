@@ -95,8 +95,14 @@ class PacienteModel {
           ? (json['estatura'] as num).toDouble()
           : double.tryParse(json['estatura']?.toString() ?? '1.65') ?? 1.65,
       medicoId: json['medico_id'] is int ? json['medico_id'] as int : int.tryParse(json['medico_id']?.toString() ?? '1'),
-      nombreMedico: json['nombre_medico'] as String? ?? 'Dr. Carlos Eduardo Hernández Torres',
-      especialidadMedico: json['especialidad_medico'] as String? ?? 'Medicina Interna y Cardiología',
+      nombreMedico: json['nombre_medico'] as String? ??
+          (json['medico'] is Map && (json['medico'] as Map)['usuario'] is Map
+              ? 'Dr. ${(json['medico']['usuario']['primer_nombre'] ?? '')} ${(json['medico']['usuario']['apellido_paterno'] ?? '')}'.trim()
+              : 'Dr. Carlos Eduardo Hernández Torres'),
+      especialidadMedico: json['especialidad_medico'] as String? ??
+          (json['medico'] is Map && (json['medico'] as Map)['especialidad'] != null
+              ? (json['medico']['especialidad'] as String)
+              : 'Medicina Interna y Cardiología'),
     );
   }
 }

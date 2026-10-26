@@ -6,6 +6,10 @@ import '../widgets/history_card.dart';
 import 'register_metric_input_screen.dart';
 
 /// Pantalla "Mi Historial" correspondiente a la tercera captura.
+///
+/// Carga las mediciones desde el backend Laravel (`GET /api/metricas-pacientes`)
+/// al iniciarse. Incluye pull-to-refresh y un botón de recarga manual.
+/// Si el servidor no está disponible, muestra los datos locales del servicio.
 class HistoryScreen extends StatefulWidget {
   final ValueChanged<int>? onNavigateTab;
 
@@ -21,6 +25,21 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   // Filtro activo: null = "Todos"
   CategoriaMetrica? _filtroSeleccionado;
+  bool _isFirstLoad = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarHistorial();
+  }
+
+  Future<void> _cargarHistorial() async {
+    final metricasService = MetricasService();
+    await metricasService.cargarHistorialDesdeServidor();
+    if (mounted) {
+      setState(() => _isFirstLoad = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +59,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               children: [
                 // ── Encabezado fijo ───────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -53,27 +72,82 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           letterSpacing: -0.5,
                         ),
                       ),
-                      // Botón para refrescar
-                      IconButton(
-                        onPressed: () {
-                          metricasService.cargarHistorialDesdeServidor();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Historial sincronizado'),
-                              duration: Duration(seconds: 1),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.refresh_rounded,
-                          color: Color(0xFF64748B),
-                        ),
-                        tooltip: 'Recargar',
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Indicador de conexión
+                          _buildMiniConnectionBadge(metricasService),
+                          const SizedBox(width: 4),
+                          // Botón para refrescar
+                          IconButton(
+                            onPressed: metricasService.isLoading
+                                ? null
+                                : () async {
+                                    await metricasService.cargarHistorialDesdeServidor();
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Row(
+                                          children: [
+                                            Icon(
+                                              metricasService.isOnline
+                                                  ? Icons.cloud_done_rounded
+                                                  : Icons.cloud_off_rounded,
+                                              color: Colors.white,
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              metricasService.isOnline
+                                                  ? 'Historial sincronizado con el servidor'
+                                                  : 'Sin conexión — mostrando datos locales',
+                                            ),
+                                          ],
+                                        ),
+                                        backgroundColor: metricasService.isOnline
+                                            ? const Color(0xFF10B981)
+                                            : const Color(0xFFD97706),
+                                        duration: const Duration(seconds: 2),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                            icon: metricasService.isLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.refresh_rounded,
+                                    color: Color(0xFF64748B),
+                                  ),
+                            tooltip: 'Recargar desde servidor',
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
+
+                // ── Barra de carga durante sincronización ─────────────
+                if (_isFirstLoad && metricasService.isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: LinearProgressIndicator(
+                      color: Color(0xFF2563EB),
+                      backgroundColor: Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.all(Radius.circular(4)),
+                    ),
+                  ),
+
+                const SizedBox(height: 10),
 
                 // ── Filtros horizontales (Chips) ──────────────────────
                 SizedBox(
@@ -129,19 +203,47 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Expanded(
                   child: mediciones.isEmpty
                       ? _buildEmptyState()
-                      : ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                          itemCount: mediciones.length,
-                          itemBuilder: (context, index) {
-                            final m = mediciones[index];
-                            return HistoryCard(
-                              medicion: m,
-                              onTap: () {
-                                _mostrarDetalleMedicion(m);
-                              },
-                            );
-                          },
+                      : RefreshIndicator(
+                          onRefresh: _cargarHistorial,
+                          color: const Color(0xFF2563EB),
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                            itemCount: mediciones.length,
+                            itemBuilder: (context, index) {
+                              final m = mediciones[index];
+                              return Dismissible(
+                                key: ValueKey(m.id ?? index),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.only(right: 20),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEF4444),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                                confirmDismiss: (_) => _confirmarEliminacion(m),
+                                onDismissed: (_) {
+                                  if (m.id != null) {
+                                    MetricasService().eliminarMedicion(m.id!);
+                                  }
+                                },
+                                child: HistoryCard(
+                                  medicion: m,
+                                  onTap: () {
+                                    _mostrarDetalleMedicion(m);
+                                  },
+                                ),
+                              );
+                            },
+                          ),
                         ),
                 ),
               ],
@@ -149,6 +251,45 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMiniConnectionBadge(MetricasService service) {
+    if (service.isLoading) return const SizedBox.shrink();
+    return Tooltip(
+      message: service.isOnline
+          ? 'Datos del servidor'
+          : 'Datos locales (${service.lastError ?? "sin conexión"})',
+      child: Icon(
+        service.isOnline ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+        size: 16,
+        color: service.isOnline ? const Color(0xFF10B981) : const Color(0xFFD97706),
+      ),
+    );
+  }
+
+  Future<bool?> _confirmarEliminacion(dynamic medicion) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar medición'),
+        content: Text(
+          '¿Estás seguro de eliminar esta medición de ${medicion.titulo}?\n\n'
+          'Valor: ${medicion.valorFormateado} ${medicion.unidad}\n'
+          'Fecha: ${medicion.fechaFormateadaRelativa}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFEF4444)),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -248,7 +389,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(m.titulo),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Expanded(child: Text(m.titulo)),
+            if (m.esAlerta)
+              const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 22),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,19 +410,41 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Text('Notas: ${m.notas}',
                   style: const TextStyle(fontStyle: FontStyle.italic)),
             ],
-            const SizedBox(height: 8),
-            Text(
-              m.esAlerta
-                  ? '⚠️ Valor fuera del rango recomendado'
-                  : '✅ Valor dentro de parámetros normales',
-              style: TextStyle(
-                color: m.esAlerta ? const Color(0xFFD97706) : const Color(0xFF10B981),
-                fontWeight: FontWeight.w600,
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: m.esAlerta ? const Color(0xFFFFFBEB) : const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                m.esAlerta
+                    ? '⚠️ Valor fuera del rango recomendado'
+                    : '✅ Valor dentro de parámetros normales',
+                style: TextStyle(
+                  color: m.esAlerta ? const Color(0xFFD97706) : const Color(0xFF10B981),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
               ),
             ),
           ],
         ),
         actions: [
+          // Botón eliminar
+          if (m.id != null)
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final confirmar = await _confirmarEliminacion(m);
+                if (confirmar == true && m.id != null) {
+                  MetricasService().eliminarMedicion(m.id!);
+                }
+              },
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Eliminar'),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFFEF4444)),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cerrar'),

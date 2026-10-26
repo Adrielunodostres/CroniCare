@@ -202,6 +202,12 @@ class AuthService extends ChangeNotifier {
               ? (p['estatura'] as num).toDouble()
               : double.tryParse(p['estatura']?.toString() ?? '1.65') ?? 1.65,
           medicoId: p['medico_id'] is int ? p['medico_id'] : int.tryParse(p['medico_id']?.toString() ?? '1'),
+          nombreMedico: p['medico'] != null && p['medico']['usuario'] != null
+              ? 'Dr. ${(p['medico']['usuario']['primer_nombre'] ?? '')} ${(p['medico']['usuario']['apellido_paterno'] ?? '')}'.trim()
+              : 'Dr. Carlos Eduardo Hernández Torres',
+          especialidadMedico: p['medico'] != null && p['medico']['especialidad'] != null
+              ? (p['medico']['especialidad'] as String)
+              : 'Medicina Interna y Cardiología',
         );
         MetricasService().actualizarPaciente(nuevoPaciente);
       }
